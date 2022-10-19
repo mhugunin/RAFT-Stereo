@@ -13,6 +13,7 @@ import random
 from pathlib import Path
 from glob import glob
 import os.path as osp
+import matplotlib.pyplot as plt
 
 from core.utils import frame_utils
 from core.utils.augmentor import FlowAugmentor, SparseFlowAugmentor
@@ -196,6 +197,23 @@ class ETH3D(StereoDataset):
             self.image_list += [ [img1, img2] ]
             self.disparity_list += [ disp ]
 
+class KEFSentinel(StereoDataset):
+    def __init__(self, aug_params=None, root='datasets/KEFSentinel', split='training'):
+        super(KEFSentinel, self).__init__(aug_params, sparse=True)
+
+        image1_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im0.png')) )
+        image2_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im1.png')) )
+        # disp_list = sorted( glob(osp.join(root, 'training_etg_label/*/disp0GT.pfm')) ) if split == 'training' else [osp.join(root, 'test_etg_label/*/disp0GT.pfm')]*len(image1_list)
+        disp_list = sorted(glob(osp.join(root, f'{split}_etg_label/*/disp0GT.pfm')))
+
+        
+        for img1, img2, disp in zip(image1_list, image2_list, disp_list):
+            plt.imshow(plt.imread(img1))
+            plt.show()
+            self.image_list += [ [img1, img2] ]
+            self.disparity_list += [ disp ]
+
+
 class SintelStereo(StereoDataset):
     def __init__(self, aug_params=None, root='datasets/SintelStereo'):
         super().__init__(aug_params, sparse=True, reader=frame_utils.readDispSintelStereo)
@@ -278,8 +296,8 @@ class Middlebury(StereoDataset):
             for img1, img2, disp in zip(image1_list, image2_list, disp_list):
                 self.image_list += [ [img1, img2] ]
                 self.disparity_list += [ disp ]
-
   
+
 def fetch_dataloader(args):
     """ Create the data loader for the corresponding trainign set """
 
@@ -312,6 +330,12 @@ def fetch_dataloader(args):
         elif dataset_name.startswith('tartan_air'):
             new_dataset = TartanAir(aug_params, keywords=dataset_name.split('_')[2:])
             logging.info(f"Adding {len(new_dataset)} samples from Tartain Air")
+        elif dataset_name == "ETH3D":
+            new_dataset = ETH3D(aug_params)
+            logging.info(f"Adding {len(new_dataset)} samples from ETH3D")
+        elif dataset_name == "KEFSentinel": 
+            new_dataset = KEFSentinel(aug_params)
+            logging.info(f"Adding {len(new_dataset)} samples from KEFSentinel")
         train_dataset = new_dataset if train_dataset is None else train_dataset + new_dataset
 
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size, 
