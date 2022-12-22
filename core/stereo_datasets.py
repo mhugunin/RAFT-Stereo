@@ -20,7 +20,8 @@ from core.utils.augmentor import FlowAugmentor, SparseFlowAugmentor
 
 
 class StereoDataset(data.Dataset):
-    def __init__(self, aug_params=None, sparse=False, reader=None):
+    def __init__(self, aug_params=None, sparse=False, reader=None, v_flip=False, disp_scale=1.0):
+        self.v_flip = v_flip
         self.augmentor = None
         self.sparse = sparse
         self.img_pad = aug_params.pop("img_pad", None) if aug_params is not None else None
@@ -42,6 +43,8 @@ class StereoDataset(data.Dataset):
         self.image_list = []
         self.extra_info = []
 
+        self.disp_scale = disp_scale
+
     def __getitem__(self, index):
 
         if self.is_test:
@@ -62,11 +65,15 @@ class StereoDataset(data.Dataset):
                 self.init_seed = True
 
         index = index % len(self.image_list)
-        disp = self.disparity_reader(self.disparity_list[index])
+        disp = self.disparity_reader(self.disparity_list[index]) * self.disp_scale
         if isinstance(disp, tuple):
             disp, valid = disp
         else:
             valid = disp < 512
+
+        if(self.v_flip):
+            disp = np.copy(np.flip(disp, axis=0))
+            valid = np.copy(np.flip(valid, axis=0))
 
         img1 = frame_utils.read_gen(self.image_list[index][0])
         img2 = frame_utils.read_gen(self.image_list[index][1])
@@ -199,17 +206,28 @@ class ETH3D(StereoDataset):
 
 class KEFSentinel(StereoDataset):
     def __init__(self, aug_params=None, root='datasets/KEFSentinel', split='training'):
-        super(KEFSentinel, self).__init__(aug_params, sparse=True)
+        #v_flip accounts for labels being upside down in this dataset
+        super(KEFSentinel, self).__init__(aug_params, sparse=True, v_flip=True)
 
         image1_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im0.png')) )
         image2_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im1.png')) )
-        # disp_list = sorted( glob(osp.join(root, 'training_etg_label/*/disp0GT.pfm')) ) if split == 'training' else [osp.join(root, 'test_etg_label/*/disp0GT.pfm')]*len(image1_list)
         disp_list = sorted(glob(osp.join(root, f'{split}_etg_label/*/disp0GT.pfm')))
-
         
         for img1, img2, disp in zip(image1_list, image2_list, disp_list):
-            plt.imshow(plt.imread(img1))
-            plt.show()
+            self.image_list += [ [img1, img2] ]
+            self.disparity_list += [ disp ]
+
+class KEFCarla(StereoDataset):
+    def __init__(self, aug_params=None, root='datasets/KEFCarla', split='training'):
+        #v_flip accounts for labels being upside down in this dataset
+        #additionally, disp_scale accounts for a bug in datageneration where disparities are exactly 4x wrong
+        super(KEFCarla, self).__init__(aug_params, sparse=True, v_flip=True, disp_scale=4.0)
+
+        image1_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im0.png')) )
+        image2_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im1.png')) )
+        disp_list = sorted(glob(osp.join(root, f'{split}_etg_label/*/disp0GT.pfm')))
+        
+        for img1, img2, disp in zip(image1_list, image2_list, disp_list):
             self.image_list += [ [img1, img2] ]
             self.disparity_list += [ disp ]
 
@@ -334,8 +352,11 @@ def fetch_dataloader(args):
             new_dataset = ETH3D(aug_params)
             logging.info(f"Adding {len(new_dataset)} samples from ETH3D")
         elif dataset_name == "KEFSentinel": 
-            new_dataset = KEFSentinel(aug_params)
+            new_dataset = KEFSentinel(aug_params) * 5 #try out some approximate balancing
             logging.info(f"Adding {len(new_dataset)} samples from KEFSentinel")
+        elif dataset_name == "KEFCarla": 
+            new_dataset = KEFCarla(aug_params)
+            logging.info(f"Adding {len(new_dataset)} samples from KEFCarla")
         train_dataset = new_dataset if train_dataset is None else train_dataset + new_dataset
 
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size, 

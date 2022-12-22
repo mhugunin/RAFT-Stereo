@@ -150,7 +150,7 @@ def train(args):
     model.train()
     model.module.freeze_bn() # We keep BatchNorm frozen
 
-    validation_frequency = 10000
+    validation_frequency = 1000
 
     scaler = GradScaler(enabled=args.mixed_precision)
 
@@ -180,13 +180,16 @@ def train(args):
 
             logger.push(metrics)
 
+            print(total_steps)
             if total_steps % validation_frequency == validation_frequency - 1:
                 save_path = Path('checkpoints/%d_%s.pth' % (total_steps + 1, args.name))
                 logging.info(f"Saving file {save_path.absolute()}")
                 torch.save(model.state_dict(), save_path)
 
-                results = validate_things(model.module, iters=args.valid_iters)
-
+                results = validate_kefsentinel(model.module, iters=args.valid_iters)
+                logger.write_dict(results)
+                
+                results = validate_kefcarla(model.module, iters=args.valid_iters)
                 logger.write_dict(results)
 
                 model.train()
