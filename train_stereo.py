@@ -150,7 +150,7 @@ def train(args):
     model.train()
     model.module.freeze_bn() # We keep BatchNorm frozen
 
-    validation_frequency = 1000
+    validation_frequency = 500
 
     scaler = GradScaler(enabled=args.mixed_precision)
 
@@ -180,7 +180,7 @@ def train(args):
 
             logger.push(metrics)
 
-            print(total_steps)
+            #print(total_steps)
             if total_steps % validation_frequency == validation_frequency - 1:
                 save_path = Path('checkpoints/%d_%s.pth' % (total_steps + 1, args.name))
                 logging.info(f"Saving file {save_path.absolute()}")

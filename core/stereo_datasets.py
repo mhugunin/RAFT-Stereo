@@ -80,10 +80,13 @@ class StereoDataset(data.Dataset):
 
         img1 = np.array(img1).astype(np.uint8)
         img2 = np.array(img2).astype(np.uint8)
+        
+        #img1 = np.resize(img1, (1000, 1000, 3))
+        #img2 = np.resize(img2, (1000, 1000, 3))
 
         disp = np.array(disp).astype(np.float32)
         flow = np.stack([-disp, np.zeros_like(disp)], axis=-1)
-
+        
         # grayscale images
         if len(img1.shape) == 2:
             img1 = np.tile(img1[...,None], (1, 1, 3))

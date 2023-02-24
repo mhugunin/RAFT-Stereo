@@ -5,4 +5,8 @@
 
 #python train_stereo.py --name kef-eth-val --num_steps 20000 --image_size 400 400 --restore_ckpt models/raftstereo-realtime.pth --train_datasets KEFSentinel ETH3D --shared_backbone --n_downsample 3 --n_gru_layers 2 --slow_fast_gru --valid_iters 7 --corr_implementation reg_cuda --mixed_precision --spatial_scale 0.0 0.4 --do_flip h --do_flip v
 
-python train_stereo.py --name kef-eth-car-scaled-balanced --num_steps 50000 --image_size 400 400 --restore_ckpt models/raftstereo-realtime.pth --train_datasets KEFSentinel ETH3D KEFCarla --shared_backbone --n_downsample 3 --n_gru_layers 2 --slow_fast_gru --valid_iters 7 --corr_implementation reg_cuda --mixed_precision --spatial_scale 0.0 0.4 --do_flip h --do_flip v --batch_size 10
+#python train_stereo.py --name kef-eth-carfix --num_steps 50000 --image_size 400 400 --restore_ckpt models/raftstereo-realtime.pth --train_datasets KEFSentinel ETH3D KEFCarla --shared_backbone --n_downsample 3 --n_gru_layers 2 --slow_fast_gru --valid_iters 7 --corr_implementation reg_cuda --mixed_precision --spatial_scale 0.0 0.4 --do_flip h --do_flip v --batch_size 10
+
+#python train_stereo.py --name kef-eth-sent-tuned --num_steps 20000 --image_size 400 400 --restore_ckpt checkpoints/50000_kef-eth-carfix.pth --train_datasets KEFSentinel --shared_backbone --n_downsample 3 --n_gru_layers 2 --slow_fast_gru --valid_iters 7 --corr_implementation reg_cuda --mixed_precision --spatial_scale 0.0 0.4 --do_flip h --do_flip v --batch_size 10
+
+python train_stereo.py --name kef-eth-sent-solo --num_steps 30000 --image_size 400 400 --restore_ckpt models/raftstereo-realtime.pth --train_datasets KEFSentinel --shared_backbone --n_downsample 3 --n_gru_layers 2 --slow_fast_gru --valid_iters 7 --corr_implementation reg_cuda --mixed_precision --spatial_scale 0.0 0.4 --do_flip h --do_flip v --batch_size 10

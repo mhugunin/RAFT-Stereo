@@ -65,6 +65,7 @@ def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, spli
     out_list, epe_list = [], []
     
     for val_id in range(len(val_dataset)):
+        t_start = time.time()
         _, image1, image2, flow_gt, valid_gt = val_dataset[val_id]
 
         if(show_ims):
@@ -90,7 +91,8 @@ def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, spli
         with autocast(enabled=mixed_prec):
             _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
         flow_pr = padder.unpad(flow_pr.float()).cpu().squeeze(0)
-
+        print(time.time()-t_start)
+        print(np.shape(image1))
 
         assert flow_pr.shape == flow_gt.shape, (flow_pr.shape, flow_gt.shape)
         epe = torch.sum((flow_pr - flow_gt)**2, dim=0).sqrt()
@@ -387,7 +389,7 @@ if __name__ == '__main__':
     
     elif args.dataset == 'kefsentinel':
         #use test split if calling the evaluate script as main, otherwise it's validation for in-training use
-        validate_kefsentinel(model, iters=args.valid_iters, mixed_prec=use_mixed_precision, show_ims=True, split='test')
+        validate_kefsentinel(model, iters=args.valid_iters, mixed_prec=use_mixed_precision, show_ims=False, split='test')
     
     elif args.dataset == 'kefcarla':
         #use test split if calling the evaluate script as main, otherwise it's validation for in-training use
