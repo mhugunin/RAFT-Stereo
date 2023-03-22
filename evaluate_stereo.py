@@ -57,16 +57,110 @@ def validate_eth3d(model, iters=32, mixed_prec=False):
     print("Validation ETH3D: EPE %f, D1 %f" % (epe, d1))
     return {'eth3d-epe': epe, 'eth3d-d1': d1}
 
-def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, split='validation'):
+def validate_kefseek(model, iters=32, mixed_prec=False, show_ims=False, split='test'):
     """ Peform validation using the kefsentinel (validation) split """
     model.eval()
     aug_params = {}
-    val_dataset = datasets.KEFSentinel(aug_params, split=split)
+
+    val_dataset = datasets.KEFSeek(aug_params, split=split)
+    
     out_list, epe_list = [], []
     
     for val_id in range(len(val_dataset)):
         t_start = time.time()
         _, image1, image2, flow_gt, valid_gt = val_dataset[val_id]
+
+        if(show_ims):
+            fig = plt.figure(figsize=(10,7))
+            rows, columns = 2,3 
+            fig.add_subplot(rows,columns,1)
+            plt.axis('off')
+            plt.title('Input (left)')
+            plt.imshow(image2.permute(1,2,0)/255.0)
+            fig.add_subplot(rows,columns,3)
+            plt.axis('off')
+            plt.title('Input (right)')
+            plt.imshow(image1.permute(1,2,0)/255.0)
+            fig.add_subplot(rows,columns,5)
+            plt.imshow(flow_gt.permute(1,2,0), interpolation='nearest', cmap='jet', vmax=0)
+            plt.axis('off')
+            plt.title('depth label')
+
+        image1 = image1[None].cuda()
+        image2 = image2[None].cuda()
+
+
+        padder = InputPadder(image1.shape, divis_by=32)
+        image1, image2 = padder.pad(image1, image2)
+
+        with autocast(enabled=mixed_prec):
+            _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
+        t_s = time.time()
+        with autocast(enabled=mixed_prec):
+            _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
+        print(time.time()-t_s)
+        flow_pr = padder.unpad(flow_pr.float()).cpu().squeeze(0)
+        
+        print(np.shape(image1))
+
+        assert flow_pr.shape == flow_gt.shape, (flow_pr.shape, flow_gt.shape)
+        epe = torch.sum((flow_pr - flow_gt)**2, dim=0).sqrt()
+
+        epe_flattened = epe.flatten()
+        val = valid_gt.flatten() >= 0.5
+        out = (epe_flattened > 1.0)
+        image_out = out[val].float().mean().item()
+
+        image_epe = epe_flattened[val].mean().item()
+
+        logging.info(f"KEFSeek {val_id+1} out of {len(val_dataset)}. EPE {round(image_epe,4)} D1 {round(image_out,4)}")
+        epe_list.append(image_epe)
+        out_list.append(image_out)
+        
+        if(show_ims):
+            fig.add_subplot(rows,columns, 2)
+            flow_im = flow_pr.detach().numpy()
+            plt.imshow(np.transpose(flow_im, (1,2,0)), interpolation = 'nearest', cmap='jet', vmax=0)
+            plt.axis('off')
+            plt.title('RAFT depth prediction')
+            plt.show()
+
+    epe_list = np.array(epe_list)
+    out_list = np.array(out_list)
+
+    epe = np.mean(epe_list)
+    d1 = 100 * np.mean(out_list)
+
+
+    print("Validation KEFSeek: EPE %f, D1 %f" % (epe, d1))
+    return {'KEFSeek-epe': epe, 'KEFSeek-d1': d1}
+
+
+
+def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, split='validation', dense=False, eo=False):
+    """ Peform validation using the kefsentinel (validation) split """
+    model.eval()
+    aug_params = {}
+    if(dense):
+        if(eo):
+            val_dataset = datasets.KEFDenseEO(aug_params, split=split)
+        else:
+            val_dataset = datasets.KEFDenseIR(aug_params, split=split)
+
+    else:
+        val_dataset = datasets.KEFSentinel(aug_params, split=split)
+    
+    out_list, epe_list = [], []
+    
+    for val_id in range(len(val_dataset)):
+        t_start = time.time()
+        _, image1, image2, flow_gt, valid_gt = val_dataset[val_id]
+        
+        if(split=='validation' and dense==True and eo==False):
+            image1 = image1[:, :400, :]
+            image2 = image2[:, :400, :]
+            flow_gt = flow_gt[:, :400, :]
+            valid_gt = valid_gt[:400, :]
 
         if(show_ims):
             fig = plt.figure(figsize=(10,7))
@@ -80,8 +174,11 @@ def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, spli
             plt.title('IR input (right)')
             plt.imshow(image2.permute(1,2,0)/255.0)
             fig.add_subplot(rows,columns,5)
-            plt.imshow(flow_gt.permute(1,2,0))
+            plt.imshow(flow_gt.permute(1,2,0), interpolation='nearest', cmap='jet', vmin=-40, vmax=0)
+            plt.axis('off')
+            plt.title('depth label')
 
+        
         image1 = image1[None].cuda()
         image2 = image2[None].cuda()
 
@@ -90,9 +187,13 @@ def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, spli
 
         with autocast(enabled=mixed_prec):
             _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
+        t_s = time.time()
+        with autocast(enabled=mixed_prec):
+            _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
+        #print(time.time()-t_s)
         flow_pr = padder.unpad(flow_pr.float()).cpu().squeeze(0)
-        print(time.time()-t_start)
-        print(np.shape(image1))
+        
+        #print(np.shape(image1))
 
         assert flow_pr.shape == flow_gt.shape, (flow_pr.shape, flow_gt.shape)
         epe = torch.sum((flow_pr - flow_gt)**2, dim=0).sqrt()
@@ -102,18 +203,19 @@ def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, spli
         out = (epe_flattened > 1.0)
         image_out = out[val].float().mean().item()
 
-        # print("\n\n\nimage out {}".format(type(image_out)))
-        # cv2.imshow('image', image_out)
-        # cv2.waitKey(0)
-
         image_epe = epe_flattened[val].mean().item()
-        logging.info(f"KEFSentinel {val_id+1} out of {len(val_dataset)}. EPE {round(image_epe,4)} D1 {round(image_out,4)}")
+        if(dense):
+            logging.info(f"KEFSentinelDenseIR {val_id+1} out of {len(val_dataset)}. EPE {round(image_epe,4)} D1 {round(image_out,4)}")
+
+        else:
+            logging.info(f"KEFSentinel {val_id+1} out of {len(val_dataset)}. EPE {round(image_epe,4)} D1 {round(image_out,4)}")
         epe_list.append(image_epe)
         out_list.append(image_out)
         
         if(show_ims):
             fig.add_subplot(rows,columns, 2)
-            plt.imshow(np.transpose(flow_pr.detach().numpy(), (1,2,0)), interpolation = 'nearest')
+            flow_im = flow_pr.detach().numpy()
+            plt.imshow(np.transpose(flow_im, (1,2,0)), interpolation = 'nearest', cmap='jet', vmin=-40, vmax=0)
             plt.axis('off')
             plt.title('RAFT depth prediction')
             plt.show()
@@ -124,8 +226,13 @@ def validate_kefsentinel(model, iters=32, mixed_prec=False, show_ims=False, spli
     epe = np.mean(epe_list)
     d1 = 100 * np.mean(out_list)
 
-    print("Validation KEFSentinel: EPE %f, D1 %f" % (epe, d1))
-    return {'KEFSentinel-epe': epe, 'KEFSentinel-d1': d1}
+    if(dense):
+        print("Validation KEFSentinelDenseIR: EPE %f, D1 %f" % (epe, d1))
+        return {'KEFSentinelDenseIR-epe': epe, 'KEFSentinelDenseIR-d1': d1}
+
+    else:
+        print("Validation KEFSentinel: EPE %f, D1 %f" % (epe, d1))
+        return {'KEFSentinel-epe': epe, 'KEFSentinel-d1': d1}
 
 def validate_kefcarla(model, iters=32, mixed_prec=False, show_ims=False, split='validation'):
     """ Peform validation using the kefsentinel (validation) split """
@@ -347,7 +454,7 @@ def validate_middlebury(model, iters=32, split='F', mixed_prec=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--restore_ckpt', help="restore checkpoint", default=None)
-    parser.add_argument('--dataset', help="dataset for evaluation", required=True, choices=["eth3d", "kitti", "things", "kefsentinel", "kefcarla"] + [f"middlebury_{s}" for s in 'FHQ'])
+    parser.add_argument('--dataset', help="dataset for evaluation", required=True, choices=["eth3d", "kitti", "things", "kefseek", "kefsentinel", "kefsentinel_dense_ir", "kefsentinel_dense_eo", "kefcarla"] + [f"middlebury_{s}" for s in 'FHQ'])
     parser.add_argument('--mixed_precision', action='store_true', help='use mixed precision')
     parser.add_argument('--valid_iters', type=int, default=32, help='number of flow-field updates during forward pass')
 
@@ -387,9 +494,19 @@ if __name__ == '__main__':
     if args.dataset == 'eth3d':
         validate_eth3d(model, iters=args.valid_iters, mixed_prec=use_mixed_precision)
     
+    elif args.dataset == 'kefseek':
+        validate_kefseek(model, iters=args.valid_iters, mixed_prec=use_mixed_precision, show_ims=True, split='test')
+    
     elif args.dataset == 'kefsentinel':
         #use test split if calling the evaluate script as main, otherwise it's validation for in-training use
-        validate_kefsentinel(model, iters=args.valid_iters, mixed_prec=use_mixed_precision, show_ims=False, split='test')
+        validate_kefsentinel(model, iters=args.valid_iters, mixed_prec=use_mixed_precision, show_ims=True, split='test')
+    
+    
+    elif args.dataset == 'kefsentinel_dense_ir':
+        validate_kefsentinel(model, iters=args.valid_iters, mixed_prec=use_mixed_precision, show_ims=True, split='validation', dense=True)
+    
+    elif args.dataset == 'kefsentinel_dense_eo':
+        validate_kefsentinel(model, iters=args.valid_iters, mixed_prec=use_mixed_precision, show_ims=True, split='training', dense=True, eo=True)
     
     elif args.dataset == 'kefcarla':
         #use test split if calling the evaluate script as main, otherwise it's validation for in-training use

@@ -191,6 +191,11 @@ def train(args):
                 
                 results = validate_kefcarla(model.module, iters=args.valid_iters)
                 logger.write_dict(results)
+                
+                results = validate_kefsentinel(model.module, iters=args.valid_iters, dense=True)
+
+                logger.write_dict(results)
+
 
                 model.train()
                 model.module.freeze_bn()

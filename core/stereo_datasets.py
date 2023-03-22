@@ -65,35 +65,43 @@ class StereoDataset(data.Dataset):
                 self.init_seed = True
 
         index = index % len(self.image_list)
-        disp = self.disparity_reader(self.disparity_list[index]) * self.disp_scale
-        if isinstance(disp, tuple):
-            disp, valid = disp
-        else:
-            valid = disp < 512
-
-        if(self.v_flip):
-            disp = np.copy(np.flip(disp, axis=0))
-            valid = np.copy(np.flip(valid, axis=0))
-
+        
         img1 = frame_utils.read_gen(self.image_list[index][0])
         img2 = frame_utils.read_gen(self.image_list[index][1])
 
         img1 = np.array(img1).astype(np.uint8)
         img2 = np.array(img2).astype(np.uint8)
         
-        #img1 = np.resize(img1, (1000, 1000, 3))
-        #img2 = np.resize(img2, (1000, 1000, 3))
-
-        disp = np.array(disp).astype(np.float32)
-        flow = np.stack([-disp, np.zeros_like(disp)], axis=-1)
-        
         # grayscale images
+        #print(img1.shape)
         if len(img1.shape) == 2:
             img1 = np.tile(img1[...,None], (1, 1, 3))
             img2 = np.tile(img2[...,None], (1, 1, 3))
         else:
             img1 = img1[..., :3]
             img2 = img2[..., :3]
+        
+        
+        if(self.disparity_list[index] is None):
+            disp = np.zeros(np.shape(torch.from_numpy(img1).permute(2, 0, 1)))
+            valid = np.zeros(np.shape(disp))
+        else:
+            disp = np.array(self.disparity_reader(self.disparity_list[index])) * self.disp_scale
+            if isinstance(disp, tuple):
+                disp, valid = disp
+            else:
+                valid = disp < 512
+
+        if(self.v_flip):
+            disp = np.copy(np.flip(disp, axis=0))
+            valid = np.copy(np.flip(valid, axis=0))
+
+        #img1 = np.resize(img1, (1000, 1000, 3))
+        #img2 = np.resize(img2, (1000, 1000, 3))
+
+        disp = np.array(disp).astype(np.float32)
+        flow = np.stack([-disp, np.zeros_like(disp)], axis=-1)
+        
 
         if self.augmentor is not None:
             if self.sparse:
@@ -103,6 +111,9 @@ class StereoDataset(data.Dataset):
 
         img1 = torch.from_numpy(img1).permute(2, 0, 1).float()
         img2 = torch.from_numpy(img2).permute(2, 0, 1).float()
+        if(len(np.shape(flow))>3):
+            flow = flow[0]
+            valid = valid[0]
         flow = torch.from_numpy(flow).permute(2, 0, 1).float()
 
         if self.sparse:
@@ -211,6 +222,48 @@ class KEFSentinel(StereoDataset):
     def __init__(self, aug_params=None, root='datasets/KEFSentinel', split='training'):
         #v_flip accounts for labels being upside down in this dataset
         super(KEFSentinel, self).__init__(aug_params, sparse=True, v_flip=True)
+
+        image1_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im0.png')) )
+        image2_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im1.png')) )
+        disp_list = sorted(glob(osp.join(root, f'{split}_etg_label/*/disp0GT.pfm')))
+        
+        for img1, img2, disp in zip(image1_list, image2_list, disp_list):
+            self.image_list += [ [img1, img2] ]
+            self.disparity_list += [ disp ]
+
+class KEFSeek(StereoDataset):
+    def __init__(self, aug_params=None, root='datasets/KEFSeek', split='test'):
+        #v_flip accounts for labels being upside down in this dataset
+        super(KEFSeek, self).__init__(aug_params, sparse=True, v_flip=True)
+
+        image1_list = sorted( glob(osp.join(root, f'{split}_img/*/im0.png')) )
+        image2_list = sorted( glob(osp.join(root, f'{split}_img/*/im1.png')) )
+        disp_list = sorted(glob(osp.join(root, f'{split}_label/*/disp0GT.pfm')))
+      
+        image1_list = image1_list[:]
+        image2_list = image2_list[:]
+
+        for img1, img2 in zip(image1_list, image2_list):
+            self.image_list += [ [img1, img2] ]
+            self.disparity_list += [ None ]
+
+class KEFDenseIR(StereoDataset):
+    def __init__(self, aug_params=None, root='datasets/KEFDenseIR', split='training'):
+        #v_flip accounts for labels being upside down in this dataset ??? MAYBE true, new export format
+        super(KEFDenseIR, self).__init__(aug_params, sparse=True, v_flip=True)
+
+        image1_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im0.png')) )
+        image2_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im1.png')) )
+        disp_list = sorted(glob(osp.join(root, f'{split}_etg_label/*/disp0GT.pfm')))
+        
+        for img1, img2, disp in zip(image1_list, image2_list, disp_list):
+            self.image_list += [ [img1, img2] ]
+            self.disparity_list += [ disp ]
+
+class KEFDenseEO(StereoDataset):
+    def __init__(self, aug_params=None, root='datasets/KEFDenseEO', split='training'):
+        #v_flip accounts for labels being upside down in this dataset ??? MAYBE true, new export format
+        super(KEFDenseEO, self).__init__(aug_params, sparse=True, v_flip=True)
 
         image1_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im0.png')) )
         image2_list = sorted( glob(osp.join(root, f'{split}_etg_img/*/im1.png')) )
@@ -355,8 +408,14 @@ def fetch_dataloader(args):
             new_dataset = ETH3D(aug_params)
             logging.info(f"Adding {len(new_dataset)} samples from ETH3D")
         elif dataset_name == "KEFSentinel": 
-            new_dataset = KEFSentinel(aug_params) * 5 #try out some approximate balancing
-            logging.info(f"Adding {len(new_dataset)} samples from KEFSentinel")
+            new_dataset = KEFSentinel(aug_params)*4
+            logging.info(f"Adding 4x scaled, total of {len(new_dataset)}, samples from KEFSentinel")
+        elif dataset_name == "KEFDenseIR": 
+            new_dataset = KEFDenseIR(aug_params)
+            logging.info(f"Adding {len(new_dataset)} samples from KEFDenseIR")
+        elif dataset_name == "KEFDenseEO": 
+            new_dataset = KEFDenseEO(aug_params)
+            logging.info(f"Adding {len(new_dataset)} samples from KEFDenseEO")
         elif dataset_name == "KEFCarla": 
             new_dataset = KEFCarla(aug_params)
             logging.info(f"Adding {len(new_dataset)} samples from KEFCarla")
